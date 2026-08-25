@@ -39,6 +39,14 @@ endroits à adapter.
 
 Relancer la même commande plus tard met à jour le code et conserve le mot de passe déjà choisi.
 
+> **Écran noir avec juste le curseur de la souris après le redémarrage ?** C'est normal sur une
+> carte SD toute neuve : les dossiers `publicite` et `film` sont vides, donc `videoloop.py`
+> (déjà lancé en arrière-plan par Openbox) attend simplement de trouver des vidéos — il retente
+> toutes les 10 secondes sans jamais planter, d'où l'écran noir sans wallpaper ni rien d'affiché.
+> Ajoute des vidéos via l'interface web (`http://<ip-du-pi>:8080/`, voir section **Utilisation**
+> ci-dessous : au moins 2 dans `Publicite` et 1 dans `Film`) et la lecture démarre automatiquement
+> dans les 10 secondes qui suivent, sans avoir besoin de redémarrer quoi que ce soit.
+
 ## Utilisation
 
 - **Ajouter des vidéos** : ouvre `http://<ip-du-pi>:8080/` dans un navigateur sur le même
@@ -48,27 +56,27 @@ Relancer la même commande plus tard met à jour le code et conserve le mot de p
 - La boucle vidéo prend automatiquement en compte les nouvelles vidéos (pas besoin de
   redémarrer le Pi).
 
-## BoxCutter script
+## Script BoxCutter
 
-A PowerShell script that automatically strips pillarbox/letterbox black bars from a folder of
-source videos before they get transferred to the Pi.
+Un script PowerShell qui retire automatiquement les bandes noires (pillarbox/letterbox) d'un
+dossier de vidéos sources, avant leur transfert vers le Pi.
 
-It uses `ffmpeg`/`ffprobe`'s `cropdetect` filter to analyze each video and detect exactly where
-the real picture starts and ends, then re-encodes a cropped copy into a `Boxed` subfolder. The
-originals are never modified.
+Il utilise le filtre `cropdetect` de `ffmpeg`/`ffprobe` pour analyser chaque vidéo et détecter
+précisément où commence et où finit l'image réelle, puis réencode une copie recadrée dans un
+sous-dossier `Boxed`. Les fichiers originaux ne sont jamais modifiés.
 
-You point it at a folder (e.g. `.\BoxCutter.ps1 -Path "C:\Users\XXX\Downloads\videos\"`) and it
-batch-processes every file inside, so all your video clips come out properly filling a 4:3 frame
-before they ever reach the CRT.
+Tu le pointes vers un dossier (ex. `.\BoxCutter.ps1 -Path "C:\Users\XXX\Downloads\videos\"`) et il
+traite automatiquement tous les fichiers à l'intérieur, pour que toutes tes vidéos remplissent
+correctement un cadre 4:3 avant d'arriver sur la télé cathodique.
 
-**Install ffmpeg:**
+**Installer ffmpeg :**
 ```powershell
 winget install --id Gyan.FFmpeg -e
 ```
 
-Download the `BoxCutter.ps1` script (`tools/BoxCutter.ps1` in this repo).
+Télécharge le script `BoxCutter.ps1` (`tools/BoxCutter.ps1` dans ce dépôt).
 
-**Powershell :**
+**PowerShell :**
 ```powershell
 powershell -ExecutionPolicy Bypass -File "C:\XXX\BoxCutter.ps1" -Path "C:\Users\XXX\Downloads\videos"
 ```
@@ -111,3 +119,10 @@ sudo ss -tlnp | grep 8080                    # verifier qu'un seul process ecout
 DISPLAY=:0 xrandr                            # resolution/etat vus par X11
 aplay -l ; aplay -L                          # cartes son et devices logiques disponibles
 ```
+
+## Liens utiles
+
+- [ytdlp.online](https://ytdlp.online/) — téléchargement en lot (batch) de vidéos YouTube,
+  pratique pour récupérer des publicités/films à ajouter dans `publicite`/`film`.
+- [Playlist de 400+ bandes-annonces de films des années 90](https://youtube.com/playlist?list=PLxARvl8pPDO-T7QuuQlNUMCadqyXr_OBW&si=TH20KhbHGWm8NqXF) —
+  bonne source de contenu pour le dossier `film`.
