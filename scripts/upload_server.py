@@ -13,6 +13,7 @@ choisi a l'installation. Si tu modifies ce fichier a la main, pense a
 changer le mot de passe avant usage reel.
 """
 
+import shutil
 from functools import wraps
 from pathlib import Path
 
@@ -58,6 +59,10 @@ PAGE = """
   button.del { background:#a33; color:white; border:none; padding:.3rem .7rem; border-radius:5px; cursor:pointer; }
   button.del:hover { background:#c44; }
   .empty { color:#777; font-style:italic; }
+  .storage { margin:.8rem 0 1.4rem 0; }
+  .storage-label { display:flex; justify-content:space-between; font-size:.85rem; color:#ccc; margin-bottom:.3rem; }
+  .storage-bar { background:#333; border-radius:6px; height:10px; overflow:hidden; }
+  .storage-fill { background:#2a6; height:100%; transition:width .3s ease; }
   #progress-wrap { display:none; margin:.8rem 0; }
   #progress-bar { background:#333; border-radius:6px; height:18px; overflow:hidden; }
   #progress-fill { background:#2a6; height:100%; width:0%; transition:width .15s ease; }
@@ -66,6 +71,16 @@ PAGE = """
 </head>
 <body>
 <h1>Transfert videos - memory-vcr</h1>
+
+<div class="storage">
+  <div class="storage-label">
+    <span>Espace disque</span>
+    <span>{{ disk.used_gb }} Go / {{ disk.total_gb }} Go utilises ({{ disk.free_gb }} Go restants)</span>
+  </div>
+  <div class="storage-bar">
+    <div class="storage-fill" style="width: {{ disk.pct_used }}%;{% if disk.pct_used >= 90 %} background:#a33;{% elif disk.pct_used >= 75 %} background:#c93;{% endif %}"></div>
+  </div>
+</div>
 
 {% with messages = get_flashed_messages() %}
   {% if messages %}
@@ -192,6 +207,18 @@ def requires_auth(f):
     return decorated
 
 
+def get_disk_usage():
+    """Espace disque de la carte SD (mesure sur le dossier utilisateur, qui est
+    sur la meme partition que les videos)."""
+    usage = shutil.disk_usage(Path.home())
+    return {
+        "total_gb": round(usage.total / (1024 ** 3), 1),
+        "used_gb": round(usage.used / (1024 ** 3), 1),
+        "free_gb": round(usage.free / (1024 ** 3), 1),
+        "pct_used": round(usage.used / usage.total * 100, 1) if usage.total else 0,
+    }
+
+
 def list_videos(folder: Path):
     if not folder.exists():
         return []
@@ -239,7 +266,7 @@ def index():
         "publicite": list_videos(PUB_DIR),
         "film": list_videos(FILM_DIR),
     }
-    return render_template_string(PAGE, videos=videos)
+    return render_template_string(PAGE, videos=videos, disk=get_disk_usage())
 
 
 @app.route("/upload", methods=["POST"])
