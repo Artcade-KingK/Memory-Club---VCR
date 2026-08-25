@@ -1,0 +1,3 @@
+xset -dpms
+xset s off
+python3 "$HOME/videoloop.py" &
