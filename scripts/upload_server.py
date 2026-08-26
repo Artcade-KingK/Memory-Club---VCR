@@ -46,7 +46,11 @@ PAGE = """
 <style>
   body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; background:#111; color:#eee; }
   h1 { font-size: 1.4rem; }
-  h2 { font-size: 1.1rem; margin-top: 2rem; border-bottom: 1px solid #333; padding-bottom: .3rem; }
+  .section-header { display:flex; justify-content:space-between; align-items:center; margin-top:2rem; border-bottom:1px solid #333; padding-bottom:.3rem; }
+  .section-header h2 { margin:0; }
+  h2 { font-size: 1.1rem; }
+  button.clear-all { background:#a33; color:white; border:none; padding:.3rem .8rem; border-radius:5px; cursor:pointer; font-size:.85rem; }
+  button.clear-all:hover { background:#c44; }
   .msg { background:#234; padding:.6rem 1rem; border-radius:6px; margin-bottom:1rem; }
   form.upload { background:#1a1a1a; padding:1rem; border-radius:8px; margin-bottom:1.5rem; }
   fieldset { border:none; margin:0 0 .8rem 0; padding:0; }
@@ -162,7 +166,15 @@ PAGE = """
 </script>
 
 {% for key, label in [("publicite", "Publicite"), ("film", "Film")] %}
-  <h2>{{ label }} ({{ videos[key]|length }})</h2>
+  <div class="section-header">
+    <h2>{{ label }} ({{ videos[key]|length }})</h2>
+    {% if videos[key] %}
+    <form method="post" action="{{ url_for('clear') }}" onsubmit="return confirm('Supprimer TOUTES les videos de {{ label }} ({{ videos[key]|length }} fichier(s)) ? Cette action est irreversible.');">
+      <input type="hidden" name="folder" value="{{ key }}">
+      <button class="clear-all" type="submit">Vider {{ label }}</button>
+    </form>
+    {% endif %}
+  </div>
   {% if videos[key] %}
     <ul>
     {% for f in videos[key] %}
@@ -313,6 +325,26 @@ def delete():
         return redirect(url_for("index"))
     target.unlink()
     flash(f"'{filename}' supprime de '{folder_key}'.")
+    return redirect(url_for("index"))
+
+
+@app.route("/clear", methods=["POST"])
+@requires_auth
+def clear():
+    folder_key = request.form.get("folder", "")
+    if folder_key not in FOLDERS:
+        flash("Dossier invalide.")
+        return redirect(url_for("index"))
+
+    folder = FOLDERS[folder_key]
+    count = 0
+    if folder.exists():
+        for f in folder.iterdir():
+            if f.is_file() and f.suffix.lower() in EXTENSIONS:
+                f.unlink()
+                count += 1
+
+    flash(f"{count} fichier(s) supprime(s) de '{folder_key}'.")
     return redirect(url_for("index"))
 
 
