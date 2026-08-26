@@ -25,6 +25,13 @@
 
     Si -Path est omis, utilise le dossier courant.
 
+    Parametre optionnel :
+      -MinCropPercent <0-100>   Pourcentage minimum de largeur a retirer pour que le
+                                recadrage soit applique (defaut 5). En dessous de ce
+                                seuil (ex: 1-2px sur une image en 1280px), le gain est
+                                negligeable et ne justifie pas un reencodage complet ;
+                                la video est copiee telle quelle.
+
 .PREREQUIS
     ffmpeg et ffprobe doivent etre installes et accessibles dans le PATH.
     Installation rapide : winget install --id Gyan.FFmpeg -e
@@ -32,7 +39,8 @@
 #>
 
 param(
-    [string]$Path = (Get-Location).Path
+    [string]$Path = (Get-Location).Path,
+    [double]$MinCropPercent = 5
 )
 
 # --- Verifier ffmpeg / ffprobe ---
@@ -132,8 +140,17 @@ foreach ($video in $videos) {
     $cropH = $origH
     $cropY = 0
 
-    if (-not $cropW -or $cropW -ge $origW) {
-        Write-Host "  -> pas de bandes verticales detectees, copie telle quelle." -ForegroundColor DarkGray
+    $cropPct = 0
+    if ($cropW -and $origW -gt 0) {
+        $cropPct = [math]::Round((($origW - $cropW) / $origW) * 100, 1)
+    }
+
+    if (-not $cropW -or $cropPct -lt $MinCropPercent) {
+        if ($cropW -and $cropPct -gt 0) {
+            Write-Host "  -> bandes verticales negligeables (${cropPct}% < $MinCropPercent%), copie telle quelle." -ForegroundColor DarkGray
+        } else {
+            Write-Host "  -> pas de bandes verticales detectees, copie telle quelle." -ForegroundColor DarkGray
+        }
         Copy-Item $video.FullName $outFile
         continue
     }
