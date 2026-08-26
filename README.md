@@ -89,6 +89,13 @@ Télécharge le script `BoxCutter.ps1` (`tools/BoxCutter.ps1` dans ce dépôt).
 powershell -ExecutionPolicy Bypass -File "C:\XXX\BoxCutter.ps1" -Path "C:\Users\XXX\Downloads\videos"
 ```
 
+Un recadrage de moins de 5% de la largeur est ignoré par défaut (pas assez significatif pour
+justifier un réencodage complet). Ce seuil est ajustable avec `-MinCropPercent` :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:\XXX\BoxCutter.ps1" -Path "C:\Users\XXX\Downloads\videos" -MinCropPercent 10
+```
+
 ## Structure du dépôt
 
 ```
