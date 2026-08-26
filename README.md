@@ -58,12 +58,20 @@ Relancer la même commande plus tard met à jour le code et conserve le mot de p
 
 ## Script BoxCutter
 
-Un script PowerShell qui retire automatiquement les bandes noires (pillarbox/letterbox) d'un
-dossier de vidéos sources, avant leur transfert vers le Pi.
+Un script PowerShell qui retire automatiquement les bandes noires **verticales** (pillarbox,
+gauche/droite) d'un dossier de vidéos sources, avant leur transfert vers le Pi.
 
 Il utilise le filtre `cropdetect` de `ffmpeg`/`ffprobe` pour analyser chaque vidéo et détecter
 précisément où commence et où finit l'image réelle, puis réencode une copie recadrée dans un
 sous-dossier `Boxed`. Les fichiers originaux ne sont jamais modifiés.
+
+**Important** : seule la largeur est recadrée, la hauteur n'est jamais touchée — même si
+`ffmpeg` détecte des bandes horizontales (letterbox, haut/bas). Une bande verticale signifie
+qu'une image 4:3 flotte dans un cadre 16:9 (à corriger), tandis qu'une bande horizontale
+signifie généralement qu'un film large (16:9/cinémascope) est incrusté dans un cadre 4:3 —
+très courant sur les bandes-annonces des années 90. La retirer rendrait la vidéo plus large
+que 4:3, et VLC recréerait alors lui-même du pillarbox à la lecture pour compenser, puisque
+le Pi force une sortie fixe en 4:3.
 
 Tu le pointes vers un dossier (ex. `.\BoxCutter.ps1 -Path "C:\Users\XXX\Downloads\videos\"`) et il
 traite automatiquement tous les fichiers à l'intérieur, pour que toutes tes vidéos remplissent

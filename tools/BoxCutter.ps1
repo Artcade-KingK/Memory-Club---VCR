@@ -1,13 +1,24 @@
 <#
 .SYNOPSIS
-    Detecte et retire automatiquement les bandes noires (pillarbox / letterbox) des
-    videos d'un dossier, via ffmpeg.
+    Detecte et retire automatiquement les bandes noires VERTICALES (pillarbox,
+    gauche/droite) des videos d'un dossier, via ffmpeg.
 
 .DESCRIPTION
     Pour chaque video du dossier indique, le script analyse une portion de la video
-    pour detecter la zone d'image reelle (sans bandes noires), puis recree une copie
-    recadree dans un sous-dossier "Boxed". Les fichiers originaux ne sont JAMAIS
-    modifies ni supprimes.
+    pour detecter la zone d'image reelle, puis recree une copie recadree dans un
+    sous-dossier "Boxed". Les fichiers originaux ne sont JAMAIS modifies ni supprimes.
+
+    IMPORTANT : seules les bandes VERTICALES (pillarbox) sont retirees. La hauteur
+    n'est jamais touchee, meme si ffmpeg detecte des bandes horizontales (letterbox,
+    haut/bas). Raison : le Pi force une sortie fixe 4:3 (640x480). Une bande verticale
+    signifie qu'une image 4:3 est "flottante" dans un cadre 16:9 -> l'enlever restaure
+    une vraie image 4:3, parfaite pour une sortie 4:3 fixe. Une bande horizontale, elle,
+    signifie generalement qu'un film large (16:9/cinemascope) est incruste dans un cadre
+    4:3 (tres courant sur les VHS/diffusions TV des annees 90) -> si on l'enleve, la
+    video devient plus large que 4:3, et VLC recreera alors lui-meme du pillarbox a la
+    lecture pour compenser, ce qui recree exactement le probleme de bandes sur la
+    television qu'on cherche a eviter. Ces bandes horizontales font partie du contenu
+    d'origine et doivent rester telles quelles.
 
 .USAGE
     .\BoxCutter.ps1 -Path "C:\chemin\vers\dossier"
@@ -107,23 +118,27 @@ foreach ($video in $videos) {
     # (plus fiable que de capturer stderr directement en PowerShell)
     & ffmpeg -hide_banner -ss $startAt -i "$($video.FullName)" -t $sampleLen -vf "cropdetect=limit=24:round=2:reset=0" -f null NUL 2> $tmpLog
 
-    $cropW = $null; $cropH = $null; $cropX = $null; $cropY = $null
+    $cropW = $null; $cropX = $null
     Get-Content $tmpLog | ForEach-Object {
         if ($_ -match "crop=(\d+):(\d+):(\d+):(\d+)") {
             $cropW = [int]$Matches[1]
-            $cropH = [int]$Matches[2]
             $cropX = [int]$Matches[3]
-            $cropY = [int]$Matches[4]
+            # $Matches[2] (hauteur) et $Matches[4] (offset Y) sont ignores
+            # volontairement : on ne touche jamais aux bandes horizontales.
         }
     }
 
-    if (-not $cropW -or ($cropW -ge $origW -and $cropH -ge $origH)) {
-        Write-Host "  -> pas de bandes noires detectees, copie telle quelle." -ForegroundColor DarkGray
+    # On ne recadre QUE la largeur ; la hauteur reste toujours celle d'origine.
+    $cropH = $origH
+    $cropY = 0
+
+    if (-not $cropW -or $cropW -ge $origW) {
+        Write-Host "  -> pas de bandes verticales detectees, copie telle quelle." -ForegroundColor DarkGray
         Copy-Item $video.FullName $outFile
         continue
     }
 
-    Write-Host "  -> bandes noires detectees (${origW}x${origH} -> ${cropW}x${cropH}), recadrage..." -ForegroundColor Green
+    Write-Host "  -> bandes verticales detectees (${origW}x${origH} -> ${cropW}x${cropH}), recadrage..." -ForegroundColor Green
 
     & ffmpeg -hide_banner -loglevel error -stats -y -i "$($video.FullName)" `
         -vf "crop=${cropW}:${cropH}:${cropX}:${cropY}" `
