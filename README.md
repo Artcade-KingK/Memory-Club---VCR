@@ -73,6 +73,12 @@ Relancer la même commande plus tard met à jour le code et conserve le mot de p
   `Film: 1`, `Publicite: 0`, `Noel: 2` fait jouer en boucle 1 film puis 2 vidéos de la
   playlist `Noel`, sans jamais toucher aux publicités. Les changements sont pris en compte
   par `videoloop.py` au tour de boucle suivant, sans avoir besoin de redémarrer le Pi.
+- **Basculer entre HDMI et composite** : tout en haut de la page, la section "Sortie video"
+  affiche le mode actif et propose deux boutons, "Activer HDMI" / "Activer composite".
+  **Un seul mode à la fois** est possible (limitation matérielle du Pi 4 — voir la section
+  technique plus bas) : activer l'un désactive automatiquement l'autre. Cliquer sur un
+  bouton modifie la configuration puis **redémarre le Pi automatiquement**, avec un écran
+  noir pendant 30 à 60 secondes le temps que le nouveau mode s'applique.
 
 ## Script BoxCutter
 
@@ -117,14 +123,16 @@ powershell -ExecutionPolicy Bypass -File "C:\XXX\BoxCutter.ps1" -Path "C:\Users\
 ## Structure du dépôt
 
 ```
-install.sh                     script d'installation unique (one-liner)
-scripts/videoloop.py           boucle de lecture vidéo (VLC en ligne de commande)
-scripts/upload_server.py       interface web de transfert des vidéos (Flask)
-config/xinitrc                 lance Openbox au démarrage de X11
-config/openbox-autostart       désactive l'économiseur d'écran, lance videoloop.py
-config/xorg-10-hdmi-4-3.conf   force la sortie HDMI en 640x480 (4:3), ignore l'EDID
-systemd/vcr-upload.service     service systemd pour l'interface web (port 8080)
-tools/BoxCutter.ps1            (PC Windows) retire les bandes noires des videos avant transfert
+install.sh                        script d'installation unique (one-liner)
+scripts/videoloop.py              boucle de lecture vidéo (VLC en ligne de commande)
+scripts/upload_server.py          interface web de transfert des vidéos (Flask)
+scripts/set_video_mode.sh         (root) bascule HDMI/composite, appele par install.sh et par la page web via sudo
+config/xinitrc                    lance Openbox au démarrage de X11
+config/openbox-autostart          désactive l'économiseur d'écran, lance videoloop.py
+config/xorg-10-hdmi-4-3.conf      force la sortie HDMI en 640x480 (4:3), ignore l'EDID
+config/xorg-10-composite-4-3.conf force la sortie composite (jack 3.5mm), ignore l'EDID
+systemd/vcr-upload.service        service systemd pour l'interface web (port 8080)
+tools/BoxCutter.ps1               (PC Windows) retire les bandes noires des videos avant transfert
 ```
 
 ## Notes techniques (pièges rencontrés pendant le développement)
@@ -143,6 +151,16 @@ tools/BoxCutter.ps1            (PC Windows) retire les bandes noires des videos 
   (`config/xorg-10-hdmi-4-3.conf`), installé automatiquement par `install.sh`.
 - **Stockage vidéos** : sur la carte SD directement (pas de clé USB — le montage automatique
   via udev s'est avéré peu fiable sur ce setup).
+- **HDMI et composite ne peuvent pas coexister sur un Pi 4** : la sortie composite native
+  (jack 3.5mm) a besoin d'une horloge spécifique, partagée avec le circuit HDMI — l'activer
+  coupe entièrement HDMI au niveau matériel (aucun connecteur `HDMI-A-*` ne réapparaît tant
+  que le composite est actif). La page web ne propose donc jamais les deux en même temps :
+  `scripts/set_video_mode.sh` (exécuté en root, soit par `install.sh`, soit via une règle
+  `sudo` dédiée et restreinte pour `upload_server.py`) retire systématiquement toute trace
+  de configuration de l'autre mode avant d'appliquer celui demandé (ligne `dtoverlay=` et
+  réglages `sdtv_*`/`enable_tvout` dans `config.txt`, fichier `xorg.conf.d` correspondant),
+  écrit le mode choisi dans `/etc/memory-vcr/video-mode`, puis redémarre le Pi (le
+  changement n'est appliqué qu'au boot suivant, ce paramètre étant lu par le firmware).
 
 ## Diagnostic
 

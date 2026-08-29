@@ -102,10 +102,32 @@ if ! grep -qF "$BASHRC_LINE" "$HOME/.bashrc" 2>/dev/null; then
     printf '\n%s\n' "$BASHRC_LINE" >> "$HOME/.bashrc"
 fi
 
-# --- 7. Sortie HDMI forcee en 4:3 -------------------------------------------
-log "Configuration de la sortie HDMI en 4:3 (ignore l'EDID du convertisseur HDMI->AV)..."
-sudo mkdir -p /etc/X11/xorg.conf.d
-sudo cp "$SRC_DIR/config/xorg-10-hdmi-4-3.conf" /etc/X11/xorg.conf.d/10-hdmi-4-3.conf
+# --- 7. Sortie video : HDMI (par defaut) ou composite, un seul a la fois ---
+log "Configuration de la sortie video (HDMI 4:3 par defaut, composite disponible en option)..."
+sudo mkdir -p /etc/memory-vcr /etc/X11/xorg.conf.d
+sudo cp "$SRC_DIR/config/xorg-10-hdmi-4-3.conf" /etc/memory-vcr/xorg-hdmi.conf
+sudo cp "$SRC_DIR/config/xorg-10-composite-4-3.conf" /etc/memory-vcr/xorg-composite.conf
+sudo cp "$SRC_DIR/scripts/set_video_mode.sh" /usr/local/bin/vcr-set-video-mode
+sudo chmod 755 /usr/local/bin/vcr-set-video-mode
+sudo chown root:root /usr/local/bin/vcr-set-video-mode
+
+if [ -f /etc/memory-vcr/video-mode ]; then
+    CURRENT_VIDEO_MODE=$(cat /etc/memory-vcr/video-mode)
+    log "Mode video deja configure sur cette carte SD : $CURRENT_VIDEO_MODE (conserve)."
+else
+    CURRENT_VIDEO_MODE="hdmi"
+    log "Premiere installation : mode video par defaut = HDMI."
+fi
+sudo /usr/local/bin/vcr-set-video-mode "$CURRENT_VIDEO_MODE" --no-reboot
+
+log "Autorisation sudo restreinte pour basculer HDMI/composite depuis la page web..."
+SUDOERS_LINE="$(whoami) ALL=(root) NOPASSWD: /usr/local/bin/vcr-set-video-mode hdmi, /usr/local/bin/vcr-set-video-mode composite"
+echo "$SUDOERS_LINE" | sudo tee /etc/sudoers.d/vcr-video-mode > /dev/null
+sudo chmod 440 /etc/sudoers.d/vcr-video-mode
+if ! sudo visudo -c -f /etc/sudoers.d/vcr-video-mode > /dev/null 2>&1; then
+    sudo rm -f /etc/sudoers.d/vcr-video-mode
+    warn "Erreur de syntaxe sudoers detectee, regle retiree par securite. Le changement de mode video depuis la page web ne fonctionnera pas tant que /etc/sudoers.d/vcr-video-mode n'est pas corrige manuellement."
+fi
 
 # --- 8. Service web de transfert des videos ---------------------------------
 log "Installation du service web de transfert des videos (port 8080)..."
@@ -139,6 +161,9 @@ echo "    Mot de passe : $UPLOAD_PASSWORD"
 echo ""
 echo "  Branche le convertisseur HDMI->AV sur le port HDMI0 du Pi"
 echo "  (le port le plus proche de l'alimentation USB-C)."
+echo ""
+echo "  Mode video actuel : $CURRENT_VIDEO_MODE (modifiable depuis la page web,"
+echo "  section 'Sortie video' -- redemarre automatiquement le Pi)."
 echo ""
 echo "  Le Pi va redemarrer dans 10 secondes pour appliquer tous les reglages."
 echo "  Ctrl+C maintenant pour annuler le redemarrage."

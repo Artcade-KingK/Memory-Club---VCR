@@ -15,6 +15,7 @@ changer le mot de passe avant usage reel.
 
 import json
 import shutil
+import subprocess
 from functools import wraps
 from pathlib import Path
 
@@ -49,6 +50,15 @@ DEFAULT_PLAYLIST_CONFIG = [
     {"folder": "film", "count": 1},
 ]
 MAX_PLAYLIST_COUNT = 50
+
+# Sortie video : HDMI (defaut) ou composite (jack 3.5mm -> RCA). Les deux ne
+# peuvent PAS coexister sur un Pi 4 (limitation materielle, horloge partagee
+# entre HDMI et le VEC composite — voir CLAUDE.md). Le fichier d'etat est
+# ecrit en root:root mais lisible par tous par le script vcr-set-video-mode ;
+# ce script lui-meme n'est appelable ici que via une regle sudo restreinte
+# (voir install.sh / /etc/sudoers.d/vcr-video-mode), jamais en root direct.
+VIDEO_MODE_FILE = Path("/etc/memory-vcr/video-mode")
+VIDEO_MODE_SCRIPT = "/usr/local/bin/vcr-set-video-mode"
 
 app = Flask(__name__)
 app.secret_key = "memory-vcr-upload-secret"  # session locale uniquement, pas besoin d'etre secret
@@ -87,6 +97,14 @@ PAGE = """
   .storage-label { display:flex; justify-content:space-between; font-size:.85rem; color:#ccc; margin-bottom:.3rem; }
   .storage-bar { background:#333; border-radius:6px; height:10px; overflow:hidden; }
   .storage-fill { background:#2a6; height:100%; transition:width .3s ease; }
+  .video-mode { background:#1a1a1a; padding:1rem; border-radius:8px; margin-bottom:1.5rem; }
+  .video-mode h2 { margin-top:0; }
+  .video-mode .hint { color:#ccc; font-size:.85rem; margin:-.3rem 0 .9rem 0; }
+  .video-mode-buttons { display:flex; gap:.7rem; }
+  .video-mode-buttons form { margin:0; }
+  .video-mode-buttons button { background:#2a6; color:white; border:none; padding:.5rem 1rem; border-radius:6px; cursor:pointer; }
+  .video-mode-buttons button:hover:not(:disabled) { background:#3b7; }
+  .video-mode-buttons button:disabled { background:#333; color:#888; cursor:default; }
   .playlist-config { background:#1a1a1a; padding:1rem; border-radius:8px; margin-bottom:1.5rem; }
   .playlist-config h2 { margin-top:0; }
   .playlist-config .hint { color:#999; font-size:.85rem; margin:-.3rem 0 .9rem 0; }
@@ -126,6 +144,26 @@ PAGE = """
     {% for m in messages %}<div class="msg">{{ m }}</div>{% endfor %}
   {% endif %}
 {% endwith %}
+
+<div class="video-mode">
+  <h2>Sortie video</h2>
+  <p class="hint">
+    Mode actuel : <strong>{{ "HDMI" if video_mode == "hdmi" else "Composite (jack 3.5mm vers RCA)" }}</strong>.
+    Un seul mode a la fois est possible (limitation materielle du Pi 4, HDMI et composite
+    ne peuvent pas fonctionner ensemble). Changer de mode redemarre le Pi automatiquement,
+    avec un ecran noir pendant 30 a 60 secondes.
+  </p>
+  <div class="video-mode-buttons">
+    <form method="post" action="{{ url_for('set_video_mode_route') }}" onsubmit='return confirm("Activer le mode HDMI ? Le Pi va redemarrer avec un ecran noir pendant 30 a 60 secondes.");'>
+      <input type="hidden" name="mode" value="hdmi">
+      <button type="submit" {% if video_mode == "hdmi" %}disabled{% endif %}>Activer HDMI</button>
+    </form>
+    <form method="post" action="{{ url_for('set_video_mode_route') }}" onsubmit='return confirm("Activer le mode composite ? La sortie HDMI sera coupee en attendant une reactivation, et le Pi va redemarrer avec un ecran noir pendant 30 a 60 secondes.");'>
+      <input type="hidden" name="mode" value="composite">
+      <button type="submit" {% if video_mode == "composite" %}disabled{% endif %}>Activer composite</button>
+    </form>
+  </div>
+</div>
 
 <div class="playlist-config">
   <h2>Programmation de la lecture automatique</h2>
@@ -320,6 +358,19 @@ def get_disk_usage():
     }
 
 
+def get_video_mode() -> str:
+    """Lit le mode video actuellement applique (ecrit par vcr-set-video-mode,
+    root:root mais lisible par tous). 'hdmi' par defaut si le fichier est
+    absent, illisible ou contient une valeur inattendue (avant le premier
+    reglage, ou sur une installation plus ancienne qui n'a pas encore ce
+    fichier)."""
+    try:
+        value = VIDEO_MODE_FILE.read_text().strip()
+    except OSError:
+        return "hdmi"
+    return value if value in ("hdmi", "composite") else "hdmi"
+
+
 def list_videos(folder: Path):
     if not folder.exists():
         return []
@@ -455,6 +506,7 @@ def index():
         protected=PROTECTED_FOLDERS,
         disk=get_disk_usage(),
         playlist_config=load_playlist_config(),
+        video_mode=get_video_mode(),
     )
 
 
@@ -613,6 +665,31 @@ def count_playlist():
         entry["count"] = max(0, entry["count"] - 1)
 
     save_playlist_config(config)
+    return redirect(url_for("index"))
+
+
+@app.route("/video_mode", methods=["POST"])
+@requires_auth
+def set_video_mode_route():
+    mode = request.form.get("mode", "")
+    if mode not in ("hdmi", "composite"):
+        flash("Mode video invalide.")
+        return redirect(url_for("index"))
+
+    if mode == get_video_mode():
+        flash(f"Le mode video est deja sur '{mode}'.")
+        return redirect(url_for("index"))
+
+    try:
+        subprocess.run(
+            ["sudo", VIDEO_MODE_SCRIPT, mode],
+            check=True, timeout=30, capture_output=True, text=True,
+        )
+    except Exception as exc:
+        flash(f"Erreur lors du changement de mode video : {exc}")
+        return redirect(url_for("index"))
+
+    flash(f"Mode video '{mode}' active. Redemarrage du Pi en cours (30 a 60 secondes)...")
     return redirect(url_for("index"))
 
 
