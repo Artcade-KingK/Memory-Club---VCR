@@ -13,6 +13,7 @@ choisi a l'installation. Si tu modifies ce fichier a la main, pense a
 changer le mot de passe avant usage reel.
 """
 
+import json
 import shutil
 from functools import wraps
 from pathlib import Path
@@ -28,10 +29,26 @@ PASSWORD = "CHANGE_ME"          # <-- remplace par install.sh, ou change-le ici
 PORT = 8080
 # ---------------------------------------------------------------------------
 
-PUB_DIR = Path.home() / "videos" / "publicite"
-FILM_DIR = Path.home() / "videos" / "film"
+BASE_DIR = Path.home() / "videos"
 EXTENSIONS = {".mp4", ".avi", ".mkv", ".mov"}
-FOLDERS = {"publicite": PUB_DIR, "film": FILM_DIR}
+
+# Dossiers par defaut, toujours presents et impossibles a supprimer depuis la
+# page web (utilises par videoloop.py pour la boucle de lecture automatique).
+DEFAULT_FOLDERS = ["publicite", "film"]
+PROTECTED_FOLDERS = set(DEFAULT_FOLDERS)
+FOLDER_LABELS = {"publicite": "Publicite", "film": "Film"}
+
+# Fichier de programmation de la boucle automatique, lu independamment par
+# videoloop.py. Format : liste ordonnee de {"folder": nom, "count": n} — n
+# videos (aleatoires) sont jouees depuis ce dossier a chaque tour, dans
+# l'ordre de la liste. n=0 -> dossier non joue automatiquement (stockage
+# seulement). L'ordre de cette liste = ordre de lecture.
+PLAYLIST_CONFIG_FILE = Path.home() / "playlist_config.json"
+DEFAULT_PLAYLIST_CONFIG = [
+    {"folder": "publicite", "count": 2},
+    {"folder": "film", "count": 1},
+]
+MAX_PLAYLIST_COUNT = 50
 
 app = Flask(__name__)
 app.secret_key = "memory-vcr-upload-secret"  # session locale uniquement, pas besoin d'etre secret
@@ -51,6 +68,9 @@ PAGE = """
   h2 { font-size: 1.1rem; }
   button.clear-all { background:#a33; color:white; border:none; padding:.3rem .8rem; border-radius:5px; cursor:pointer; font-size:.85rem; }
   button.clear-all:hover { background:#c44; }
+  .section-actions { display:flex; gap:.5rem; }
+  form.newfolder { display:flex; gap:.6rem; align-items:center; }
+  form.newfolder input[type=text] { flex:1; padding:.5rem; border-radius:6px; border:1px solid #333; background:#111; color:#eee; }
   .msg { background:#234; padding:.6rem 1rem; border-radius:6px; margin-bottom:1rem; }
   form.upload { background:#1a1a1a; padding:1rem; border-radius:8px; margin-bottom:1.5rem; }
   fieldset { border:none; margin:0 0 .8rem 0; padding:0; }
@@ -67,6 +87,21 @@ PAGE = """
   .storage-label { display:flex; justify-content:space-between; font-size:.85rem; color:#ccc; margin-bottom:.3rem; }
   .storage-bar { background:#333; border-radius:6px; height:10px; overflow:hidden; }
   .storage-fill { background:#2a6; height:100%; transition:width .3s ease; }
+  .playlist-config { background:#1a1a1a; padding:1rem; border-radius:8px; margin-bottom:1.5rem; }
+  .playlist-config h2 { margin-top:0; }
+  .playlist-config .hint { color:#999; font-size:.85rem; margin:-.3rem 0 .9rem 0; }
+  .config-list { list-style:none; padding:0; margin:0; }
+  .config-list li { display:flex; align-items:center; gap:.7rem; padding:.5rem 0; border-bottom:1px solid #222; }
+  .config-list li:last-child { border-bottom:none; }
+  .config-order { display:flex; flex-direction:column; gap:.15rem; }
+  .config-order form { margin:0; }
+  .config-order button, .config-count button { background:#333; color:#eee; border:none; width:1.8rem; height:1.6rem; border-radius:4px; cursor:pointer; font-size:.8rem; line-height:1; }
+  .config-order button:hover:not(:disabled), .config-count button:hover:not(:disabled) { background:#444; }
+  .config-order button:disabled, .config-count button:disabled { opacity:.3; cursor:default; }
+  .config-name { flex:1; }
+  .config-count { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
+  .config-count form { margin:0; }
+  .count-value { min-width:1.6rem; text-align:center; font-variant-numeric:tabular-nums; }
   #progress-wrap { display:none; margin:.8rem 0; }
   #progress-bar { background:#333; border-radius:6px; height:18px; overflow:hidden; }
   #progress-fill { background:#2a6; height:100%; width:0%; transition:width .15s ease; }
@@ -92,10 +127,51 @@ PAGE = """
   {% endif %}
 {% endwith %}
 
+<div class="playlist-config">
+  <h2>Programmation de la lecture automatique</h2>
+  <p class="hint">
+    Ordre de passage et nombre de videos jouees par playlist a chaque tour de boucle.
+    Une valeur a 0 = playlist non jouee automatiquement (stockage seulement).
+  </p>
+  <ul class="config-list">
+  {% for entry in playlist_config %}
+    <li>
+      <div class="config-order">
+        <form method="post" action="{{ url_for('move_playlist') }}">
+          <input type="hidden" name="folder" value="{{ entry.folder }}">
+          <input type="hidden" name="direction" value="up">
+          <button type="submit" {% if loop.first %}disabled{% endif %}>&#9650;</button>
+        </form>
+        <form method="post" action="{{ url_for('move_playlist') }}">
+          <input type="hidden" name="folder" value="{{ entry.folder }}">
+          <input type="hidden" name="direction" value="down">
+          <button type="submit" {% if loop.last %}disabled{% endif %}>&#9660;</button>
+        </form>
+      </div>
+      <span class="config-name">{{ labels.get(entry.folder, entry.folder) }}</span>
+      <div class="config-count">
+        <form method="post" action="{{ url_for('count_playlist') }}">
+          <input type="hidden" name="folder" value="{{ entry.folder }}">
+          <input type="hidden" name="action" value="dec">
+          <button type="submit" {% if entry.count == 0 %}disabled{% endif %}>-</button>
+        </form>
+        <span class="count-value">{{ entry.count }}</span>
+        <form method="post" action="{{ url_for('count_playlist') }}">
+          <input type="hidden" name="folder" value="{{ entry.folder }}">
+          <input type="hidden" name="action" value="inc">
+          <button type="submit">+</button>
+        </form>
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+
 <form class="upload" id="upload-form" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
   <fieldset>
-    <label><input type="radio" name="folder" value="publicite" checked> Publicite</label>
-    <label><input type="radio" name="folder" value="film"> Film</label>
+    {% for name in folders %}
+    <label><input type="radio" name="folder" value="{{ name }}" {% if loop.first %}checked{% endif %}> {{ labels[name] }}</label>
+    {% endfor %}
   </fieldset>
   <input type="file" name="files" multiple accept=".mp4,.avi,.mkv,.mov" required>
   <br><br>
@@ -104,6 +180,11 @@ PAGE = """
     <div id="progress-bar"><div id="progress-fill"></div></div>
     <div id="progress-text">0%</div>
   </div>
+</form>
+
+<form class="upload newfolder" method="post" action="{{ url_for('create_folder') }}">
+  <input type="text" name="name" placeholder="Nom de la nouvelle playlist (ex: noel, halloween)" required>
+  <input type="submit" value="Creer">
 </form>
 
 <script>
@@ -165,23 +246,31 @@ PAGE = """
 })();
 </script>
 
-{% for key, label in [("publicite", "Publicite"), ("film", "Film")] %}
+{% for name in folders %}
   <div class="section-header">
-    <h2>{{ label }} ({{ videos[key]|length }})</h2>
-    {% if videos[key] %}
-    <form method="post" action="{{ url_for('clear') }}" onsubmit="return confirm('Supprimer TOUTES les videos de {{ label }} ({{ videos[key]|length }} fichier(s)) ? Cette action est irreversible.');">
-      <input type="hidden" name="folder" value="{{ key }}">
-      <button class="clear-all" type="submit">Vider {{ label }}</button>
-    </form>
-    {% endif %}
+    <h2>{{ labels[name] }} ({{ videos[name]|length }})</h2>
+    <div class="section-actions">
+      {% if videos[name] %}
+      <form method="post" action="{{ url_for('clear') }}" onsubmit="return confirm('Supprimer TOUTES les videos de {{ labels[name] }} ({{ videos[name]|length }} fichier(s)) ? Cette action est irreversible.');">
+        <input type="hidden" name="folder" value="{{ name }}">
+        <button class="clear-all" type="submit">Vider {{ labels[name] }}</button>
+      </form>
+      {% endif %}
+      {% if name not in protected and not videos[name] %}
+      <form method="post" action="{{ url_for('delete_folder') }}" onsubmit="return confirm('Supprimer definitivement le dossier {{ labels[name] }} ?');">
+        <input type="hidden" name="folder" value="{{ name }}">
+        <button class="clear-all" type="submit">Supprimer ce dossier</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
-  {% if videos[key] %}
+  {% if videos[name] %}
     <ul>
-    {% for f in videos[key] %}
+    {% for f in videos[name] %}
       <li>
         <span>{{ f.name }} <span class="size">({{ f.size_mb }} Mo)</span></span>
         <form method="post" action="{{ url_for('delete') }}" onsubmit="return confirm('Supprimer {{ f.name }} ?');">
-          <input type="hidden" name="folder" value="{{ key }}">
+          <input type="hidden" name="folder" value="{{ name }}">
           <input type="hidden" name="filename" value="{{ f.name }}">
           <button class="del" type="submit">Supprimer</button>
         </form>
@@ -241,12 +330,93 @@ def list_videos(folder: Path):
     return items
 
 
+def list_folders():
+    """Cree les dossiers par defaut s'ils manquent, puis renvoie la liste de
+    tous les dossiers (sous-dossiers directs de BASE_DIR) : les dossiers
+    proteges d'abord (publicite, film), puis les playlists creees par
+    l'utilisateur par ordre alphabetique."""
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    for name in DEFAULT_FOLDERS:
+        (BASE_DIR / name).mkdir(parents=True, exist_ok=True)
+    return sorted(
+        (p.name for p in BASE_DIR.iterdir() if p.is_dir()),
+        key=lambda n: (n not in PROTECTED_FOLDERS, n.lower())
+    )
+
+
+def load_playlist_config():
+    """Charge la programmation de la boucle automatique, et la resynchronise
+    avec les dossiers reellement presents sur le disque : les dossiers
+    supprimes sont retires de la liste, les dossiers existants mais absents
+    de la liste (nouvelle playlist juste creee) sont ajoutes a la fin avec
+    un compteur a 0 (non joues tant que l'utilisateur ne l'augmente pas).
+    La version resynchronisee est reecrite sur le disque si besoin."""
+    existing = set(list_folders())
+
+    config = None
+    if PLAYLIST_CONFIG_FILE.exists():
+        try:
+            data = json.loads(PLAYLIST_CONFIG_FILE.read_text())
+            if isinstance(data, list):
+                config = [
+                    {"folder": e["folder"], "count": int(e.get("count", 0))}
+                    for e in data
+                    if isinstance(e, dict) and "folder" in e
+                ]
+        except (OSError, ValueError, KeyError, TypeError):
+            config = None
+
+    if config is None:
+        config = [dict(e) for e in DEFAULT_PLAYLIST_CONFIG]
+
+    # Retire les entrees dont le dossier n'existe plus.
+    config = [e for e in config if e["folder"] in existing]
+
+    # Ajoute les dossiers existants mais pas encore programmes.
+    known = {e["folder"] for e in config}
+    for name in list_folders():
+        if name not in known:
+            config.append({"folder": name, "count": 0})
+
+    save_playlist_config(config)
+    return config
+
+
+def save_playlist_config(config):
+    PLAYLIST_CONFIG_FILE.write_text(json.dumps(config, indent=2))
+
+
+def resolve_folder(folder_key: str) -> Path | None:
+    """Renvoie le chemin d'un dossier EXISTANT sous BASE_DIR, sans permettre
+    d'echappement (path traversal). Ne verifie pas que le dossier existe sur
+    le disque, seulement que le chemin resultant est un enfant direct de
+    BASE_DIR : appelant responsable de tester target.exists() si besoin."""
+    if not folder_key or "/" in folder_key or "\\" in folder_key or folder_key in (".", ".."):
+        return None
+    base = BASE_DIR.resolve()
+    target = (base / folder_key).resolve()
+    if target.parent != base:
+        return None
+    return target
+
+
+def safe_folder_name(name: str) -> str | None:
+    """Nettoie et valide un nom de nouvelle playlist. Renvoie None si le nom
+    est vide apres nettoyage ou invalide."""
+    if not name:
+        return None
+    cleaned = secure_filename(name.strip().lower())
+    if not cleaned or cleaned in (".", ".."):
+        return None
+    return cleaned
+
+
 def safe_target_path(folder_key: str, filename: str) -> Path | None:
     """Renvoie le chemin cible pour un NOUVEAU fichier (upload) : le nom est
     nettoye via secure_filename (accents/espaces/caracteres speciaux retires)."""
-    if folder_key not in FOLDERS:
+    base = resolve_folder(folder_key)
+    if base is None:
         return None
-    base = FOLDERS[folder_key].resolve()
     name = secure_filename(filename)
     if not name:
         return None
@@ -260,11 +430,11 @@ def safe_existing_path(folder_key: str, filename: str) -> Path | None:
     """Renvoie le chemin d'un fichier EXISTANT (suppression) sans modifier son
     nom (les fichiers deposes via scp peuvent avoir accents/espaces/parentheses).
     Verifie seulement qu'il n'y a pas d'echappement du dossier (path traversal)."""
-    if folder_key not in FOLDERS:
+    base = resolve_folder(folder_key)
+    if base is None:
         return None
     if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
         return None
-    base = FOLDERS[folder_key].resolve()
     target = (base / filename).resolve()
     if target.parent != base:
         return None
@@ -274,11 +444,18 @@ def safe_existing_path(folder_key: str, filename: str) -> Path | None:
 @app.route("/")
 @requires_auth
 def index():
-    videos = {
-        "publicite": list_videos(PUB_DIR),
-        "film": list_videos(FILM_DIR),
-    }
-    return render_template_string(PAGE, videos=videos, disk=get_disk_usage())
+    folders = list_folders()
+    videos = {name: list_videos(BASE_DIR / name) for name in folders}
+    labels = {name: FOLDER_LABELS.get(name, name.capitalize()) for name in folders}
+    return render_template_string(
+        PAGE,
+        folders=folders,
+        videos=videos,
+        labels=labels,
+        protected=PROTECTED_FOLDERS,
+        disk=get_disk_usage(),
+        playlist_config=load_playlist_config(),
+    )
 
 
 @app.route("/upload", methods=["POST"])
@@ -287,10 +464,11 @@ def upload():
     folder_key = request.form.get("folder", "")
     files = request.files.getlist("files")
 
-    if folder_key not in FOLDERS:
+    target_folder = resolve_folder(folder_key)
+    if target_folder is None:
         return jsonify(ok=False, message="Dossier invalide."), 400
 
-    FOLDERS[folder_key].mkdir(parents=True, exist_ok=True)
+    target_folder.mkdir(parents=True, exist_ok=True)
 
     saved, skipped = 0, []
     for file in files:
@@ -332,11 +510,11 @@ def delete():
 @requires_auth
 def clear():
     folder_key = request.form.get("folder", "")
-    if folder_key not in FOLDERS:
+    folder = resolve_folder(folder_key)
+    if folder is None:
         flash("Dossier invalide.")
         return redirect(url_for("index"))
 
-    folder = FOLDERS[folder_key]
     count = 0
     if folder.exists():
         for f in folder.iterdir():
@@ -345,6 +523,96 @@ def clear():
                 count += 1
 
     flash(f"{count} fichier(s) supprime(s) de '{folder_key}'.")
+    return redirect(url_for("index"))
+
+
+@app.route("/create_folder", methods=["POST"])
+@requires_auth
+def create_folder():
+    raw_name = request.form.get("name", "")
+    name = safe_folder_name(raw_name)
+    if name is None:
+        flash("Nom de playlist invalide.")
+        return redirect(url_for("index"))
+
+    target = resolve_folder(name)
+    if target is None:
+        flash("Nom de playlist invalide.")
+        return redirect(url_for("index"))
+
+    if target.exists():
+        flash(f"Le dossier '{name}' existe deja.")
+        return redirect(url_for("index"))
+
+    target.mkdir(parents=True)
+    flash(f"Playlist '{name}' creee. Elle est disponible pour l'upload, mais n'est PAS jouee automatiquement en boucle.")
+    return redirect(url_for("index"))
+
+
+@app.route("/delete_folder", methods=["POST"])
+@requires_auth
+def delete_folder():
+    folder_key = request.form.get("folder", "")
+
+    if folder_key in PROTECTED_FOLDERS:
+        flash(f"Le dossier '{folder_key}' est protege et ne peut pas etre supprime.")
+        return redirect(url_for("index"))
+
+    target = resolve_folder(folder_key)
+    if target is None or not target.exists() or not target.is_dir():
+        flash("Dossier introuvable.")
+        return redirect(url_for("index"))
+
+    if list_videos(target):
+        flash(f"Le dossier '{folder_key}' n'est pas vide, vide-le d'abord.")
+        return redirect(url_for("index"))
+
+    try:
+        target.rmdir()
+    except OSError:
+        flash(f"Impossible de supprimer '{folder_key}' (dossier non vide ?).")
+        return redirect(url_for("index"))
+
+    flash(f"Dossier '{folder_key}' supprime.")
+    return redirect(url_for("index"))
+
+
+@app.route("/playlist_config/move", methods=["POST"])
+@requires_auth
+def move_playlist():
+    folder_key = request.form.get("folder", "")
+    direction = request.form.get("direction", "")
+
+    config = load_playlist_config()
+    idx = next((i for i, e in enumerate(config) if e["folder"] == folder_key), None)
+    if idx is None or direction not in ("up", "down"):
+        return redirect(url_for("index"))
+
+    swap_with = idx - 1 if direction == "up" else idx + 1
+    if 0 <= swap_with < len(config):
+        config[idx], config[swap_with] = config[swap_with], config[idx]
+        save_playlist_config(config)
+
+    return redirect(url_for("index"))
+
+
+@app.route("/playlist_config/count", methods=["POST"])
+@requires_auth
+def count_playlist():
+    folder_key = request.form.get("folder", "")
+    action = request.form.get("action", "")
+
+    config = load_playlist_config()
+    entry = next((e for e in config if e["folder"] == folder_key), None)
+    if entry is None or action not in ("inc", "dec"):
+        return redirect(url_for("index"))
+
+    if action == "inc":
+        entry["count"] = min(MAX_PLAYLIST_COUNT, entry["count"] + 1)
+    else:
+        entry["count"] = max(0, entry["count"] - 1)
+
+    save_playlist_config(config)
     return redirect(url_for("index"))
 
 

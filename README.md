@@ -55,6 +55,24 @@ Relancer la même commande plus tard met à jour le code et conserve le mot de p
 - Formats acceptés : `.mp4`, `.avi`, `.mkv`, `.mov`.
 - La boucle vidéo prend automatiquement en compte les nouvelles vidéos (pas besoin de
   redémarrer le Pi).
+- **Créer une playlist personnalisée** : en bas du formulaire d'upload, un champ
+  "Nom de la nouvelle playlist" permet de créer un dossier supplémentaire (ex. `noel`,
+  `halloween`) pour y stocker des vidéos à part. Un dossier personnalisé vide peut être
+  supprimé depuis la page web (bouton "Supprimer ce dossier") ; `Publicite` et `Film`
+  sont protégés et ne peuvent jamais être supprimés.
+- **Programmer la lecture automatique** : en haut de la page se trouve la section
+  "Programmation de la lecture automatique", qui liste toutes les playlists (par défaut
+  et personnalisées) avec :
+  - des flèches ▲▼ pour changer l'ordre de passage,
+  - un compteur +/- indiquant combien de vidéos (tirées au hasard) sont jouées depuis
+    cette playlist à chaque tour de boucle.
+
+  Une playlist à **0** n'est jamais jouée automatiquement (stockage seulement) — c'est le
+  cas par défaut pour toute nouvelle playlist créée. Une nouvelle playlist n'est donc
+  intégrée à la rotation que si tu montes son compteur au-dessus de 0. Exemple :
+  `Film: 1`, `Publicite: 0`, `Noel: 2` fait jouer en boucle 1 film puis 2 vidéos de la
+  playlist `Noel`, sans jamais toucher aux publicités. Les changements sont pris en compte
+  par `videoloop.py` au tour de boucle suivant, sans avoir besoin de redémarrer le Pi.
 
 ## Script BoxCutter
 
