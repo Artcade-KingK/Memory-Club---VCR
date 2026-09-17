@@ -183,6 +183,25 @@ DISPLAY=:0 xrandr                            # resolution/etat vus par X11
 aplay -l ; aplay -L                          # cartes son et devices logiques disponibles
 ```
 
+## Accès physique en cas de perte du Wi-Fi (SSH/page web injoignables)
+
+Si le Pi ne répond plus en SSH ni sur la page web (Wi-Fi tombé, adresse IP changée, etc.), pas
+besoin d'interrompre la lecture vidéo en cours pour aller réparer ça : branche un clavier USB
+directement sur le Pi.
+
+1. Appuie sur `Ctrl + Alt + F2` (ou `F3`). Ça bascule vers une console texte complètement
+   séparée — l'image et le son continuent sur la télé sans aucune coupure, c'est indépendant.
+2. Connecte-toi avec l'identifiant `memory-club` et le mot de passe du Pi.
+3. Lance :
+   ```bash
+   sudo raspi-config
+   ```
+   puis va dans **System Options → Wireless LAN** pour reconfigurer le Wi-Fi (SSID, mot de
+   passe, pays).
+
+Pour revenir à l'affichage vidéo ensuite (pas obligatoire, il continue de tourner en arrière-plan
+pendant tout ce temps) : `Ctrl + Alt + F1`.
+
 ## Liens utiles
 
 - [ytdlp.online](https://ytdlp.online/) — téléchargement en lot (batch) de vidéos YouTube,
