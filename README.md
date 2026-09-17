@@ -142,6 +142,18 @@ tools/BoxCutter.ps1               (PC Windows) retire les bandes noires des vide
   direct (`hw:`/`plughw:`) n'accepte que le format IEC958 (pas du PCM classique). Solution :
   cibler explicitement `hdmi:CARD=vc4hdmi0,DEV=0` (visible via `aplay -L`), déjà fait dans
   `videoloop.py`.
+- **Son en sortie composite** : la carte ALSA HDMI n'existe plus une fois le mode composite
+  actif (HDMI est coupé matériellement, voir plus bas) — il faut donc utiliser la sortie audio
+  analogique du jack 3.5mm, carte ALSA `Headphones` (`plughw:CARD=Headphones,DEV=0`), qui accepte
+  du PCM classique sans device spécial. `videoloop.py` détecte automatiquement le mode actif
+  (via `/etc/memory-vcr/video-mode`) et choisit le bon device à chaque lecture — rien à faire
+  manuellement après une bascule HDMI/composite depuis la page web.
+- **Câble TRRS→RCA composite** : tous les câbles "4 pôles vers 3 RCA" ne sont pas compatibles.
+  Le Raspberry Pi (tous modèles, Pi 4 inclus) attend la vidéo sur le **Sleeve** (le contact le
+  plus proche du câble), pas sur le Tip comme le standard "camcorder" générique. Un câble non
+  compatible donne une image verte et fortement distordue. Utiliser un câble explicitement
+  vendu comme compatible Raspberry Pi (ex. câble officiel Adafruit #2881) plutôt qu'un câble
+  générique "camcorder"/téléphone.
 - **Bandes noires malgré des vidéos déjà en 4:3** : le Pi sort par défaut en HDMI 16:9
   (720p), et VLC plein écran rajoute lui-même du pillarbox pour respecter l'aspect ratio de
   la vidéo. Sur Bookworm (pilote KMS complet), les réglages `hdmi_group`/`hdmi_mode`/`hdmi_cvt`

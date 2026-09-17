@@ -22,6 +22,28 @@ BASE_DIR = Path.home() / "videos"
 CONFIG_FILE = Path.home() / "playlist_config.json"
 EXTENSIONS = {".mp4", ".avi", ".mkv", ".mov"}
 
+# Meme fichier d'etat que upload_server.py (voir sa section "Sortie video").
+# La sortie audio doit suivre la sortie video active : en mode HDMI, le son
+# passe par la carte HDMI (format IEC958 uniquement, d'ou le device special
+# ci-dessous) ; en mode composite, HDMI est completement desactive (voir
+# CLAUDE.md), donc plus aucun son ne sort de ce device — il faut utiliser la
+# sortie audio analogique du jack 3.5mm (carte ALSA "Headphones", qui accepte
+# du PCM classique, pas besoin d'un device special).
+VIDEO_MODE_FILE = Path("/etc/memory-vcr/video-mode")
+ALSA_DEVICE_BY_MODE = {
+    "hdmi": "hdmi:CARD=vc4hdmi0,DEV=0",
+    "composite": "plughw:CARD=Headphones,DEV=0",
+}
+DEFAULT_ALSA_DEVICE = ALSA_DEVICE_BY_MODE["hdmi"]
+
+
+def get_alsa_audio_device():
+    try:
+        mode = VIDEO_MODE_FILE.read_text().strip()
+    except OSError:
+        mode = "hdmi"
+    return ALSA_DEVICE_BY_MODE.get(mode, DEFAULT_ALSA_DEVICE)
+
 # Utilise si playlist_config.json est absent ou illisible (ex: ancienne
 # installation pas encore mise a jour) : reproduit le comportement d'origine.
 DEFAULT_CONFIG = [
@@ -58,7 +80,7 @@ def play(video):
         "cvlc", "--play-and-exit", "--fullscreen",
         "--no-osd", "--no-video-title-show",
         "--aout=alsa",
-        "--alsa-audio-device=hdmi:CARD=vc4hdmi0,DEV=0",
+        f"--alsa-audio-device={get_alsa_audio_device()}",
         str(video)
     ])
 
