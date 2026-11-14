@@ -39,6 +39,7 @@ sudo apt-get install -y --no-install-recommends \
     git \
     xserver-xorg x11-xserver-utils xinit openbox \
     vlc \
+    unclutter-xfixes \
     python3-flask
 
 # --- 2. Recuperation du code -----------------------------------------------

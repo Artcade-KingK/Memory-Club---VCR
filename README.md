@@ -173,6 +173,13 @@ tools/BoxCutter.ps1               (PC Windows) retire les bandes noires des vide
   réglages `sdtv_*`/`enable_tvout` dans `config.txt`, fichier `xorg.conf.d` correspondant),
   écrit le mode choisi dans `/etc/memory-vcr/video-mode`, puis redémarre le Pi (le
   changement n'est appliqué qu'au boot suivant, ce paramètre étant lu par le firmware).
+- **Curseur de la souris visible entre deux vidéos** : VLC masque le curseur pendant la
+  lecture (fenêtre plein écran), mais pas pendant le bref instant entre deux processus `cvlc`
+  (fin du précédent, démarrage du suivant), où c'est le curseur par défaut d'X11 qui s'affiche
+  brièvement. Solution : `unclutter-xfixes`, lancé en permanence en arrière-plan par
+  `config/openbox-autostart` (`unclutter --timeout 0.1 --start-hidden --fork`), masque le
+  curseur dès qu'il reste immobile plus de 0,1s — ce qui couvre largement l'intervalle entre
+  deux vidéos puisqu'aucune souris n'est utilisée en usage normal.
 
 ## Diagnostic
 
